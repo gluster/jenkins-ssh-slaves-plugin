@@ -131,6 +131,11 @@ public class SSHConnector extends ComputerConnector {
     public final Integer launchTimeoutSeconds;
 
     /**
+     *  Field beforeConnectCmd.
+     */
+    public final String beforeConnectCmd;
+
+    /**
      *  Field maxNumRetries.
      */
     public final Integer maxNumRetries;
@@ -170,14 +175,14 @@ public class SSHConnector extends ComputerConnector {
     }
 
     /**
-     * @see SSHLauncher#(String, int, StandardUsernameCredentials, String, String, String, String, String, Integer, Integer, Integer)
+     * @see SSHLauncher#(String, int, StandardUsernameCredentials, String, String, String, String, String, Integer, Integer, Integer, String)
      */
     @DataBoundConstructor
     public SSHConnector(int port, String credentialsId, String jvmOptions, String javaPath,
                         String prefixStartSlaveCmd, String suffixStartSlaveCmd, Integer launchTimeoutSeconds,
-                        Integer maxNumRetries, Integer retryWaitTime) {
+                        Integer maxNumRetries, Integer retryWaitTime, String beforeConnectCmd) {
         this(port, SSHLauncher.lookupSystemCredentials(credentialsId), null, null, null, jvmOptions, javaPath, null,
-             prefixStartSlaveCmd, suffixStartSlaveCmd, launchTimeoutSeconds, maxNumRetries, retryWaitTime);
+             prefixStartSlaveCmd, suffixStartSlaveCmd, launchTimeoutSeconds, maxNumRetries, retryWaitTime, beforeConnectCmd);
     }
 
     /**
@@ -197,7 +202,7 @@ public class SSHConnector extends ComputerConnector {
     public SSHConnector(int port, String credentialsId, String jvmOptions, String javaPath,
                         String prefixStartSlaveCmd, String suffixStartSlaveCmd) {
         this(port, SSHLauncher.lookupSystemCredentials(credentialsId), null, null, null, jvmOptions, javaPath, null,
-                prefixStartSlaveCmd, suffixStartSlaveCmd, null, null, null);
+                prefixStartSlaveCmd, suffixStartSlaveCmd, null, null, null, null);
     }
 
     /**
@@ -237,7 +242,7 @@ public class SSHConnector extends ComputerConnector {
                         String privatekey, String jvmOptions, String javaPath, JDKInstaller jdkInstaller,
                         String prefixStartSlaveCmd, String suffixStartSlaveCmd) {
         this(port, credentials, username, password, privatekey, jvmOptions, javaPath, jdkInstaller, prefixStartSlaveCmd,
-                suffixStartSlaveCmd, null, null, null);
+                suffixStartSlaveCmd, null, null, null, null);
     }
     /**
      * @see SSHLauncher#SSHLauncher(String, int, StandardUsernameCredentials, String, String, JDKInstaller, String,
@@ -246,7 +251,7 @@ public class SSHConnector extends ComputerConnector {
     public SSHConnector(int port, StandardUsernameCredentials credentials, String username, String password,
                         String privatekey, String jvmOptions, String javaPath, JDKInstaller jdkInstaller,
                         String prefixStartSlaveCmd, String suffixStartSlaveCmd, Integer launchTimeoutSeconds,
-                        Integer maxNumRetries, Integer retryWaitTime) {
+                        Integer maxNumRetries, Integer retryWaitTime, String beforeConnectCmd) {
         this.jvmOptions = jvmOptions;
         this.port = port == 0 ? 22 : port;
         this.credentials = credentials;
@@ -261,12 +266,13 @@ public class SSHConnector extends ComputerConnector {
         this.launchTimeoutSeconds = launchTimeoutSeconds == null || launchTimeoutSeconds <= 0 ? null : launchTimeoutSeconds;
         this.maxNumRetries = maxNumRetries == null || maxNumRetries <= 0 ? 0 : maxNumRetries;
         this.retryWaitTime = retryWaitTime == null || retryWaitTime <= 0 ? 0 : retryWaitTime;
+        this.beforeConnectCmd = fixEmpty(beforeConnectCmd);
     }
 
     @Override
     public SSHLauncher launch(String host, TaskListener listener) throws IOException, InterruptedException {
         return new SSHLauncher(host, port, getCredentials(), jvmOptions, javaPath, jdkInstaller, prefixStartSlaveCmd,
-                suffixStartSlaveCmd, launchTimeoutSeconds, maxNumRetries, retryWaitTime);
+                suffixStartSlaveCmd, launchTimeoutSeconds, maxNumRetries, retryWaitTime, beforeConnectCmd);
     }
 
     @Extension

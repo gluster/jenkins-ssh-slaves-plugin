@@ -88,13 +88,13 @@ public class SSHLauncherTest extends HudsonTestCase {
         final BufferedReader r = new BufferedReader(new InputStreamReader(
                 versionStream));
         final StringWriter output = new StringWriter();
-        final String result = new SSHLauncher(null,0,null,null,null,null,null, new DefaultJDKInstaller(), null, null).checkJavaVersion(System.out,
+        final String result = new SSHLauncher(null,0, null, null, null, new DefaultJDKInstaller(), null, null).checkJavaVersion(System.out,
                 javaCommand, r, output);
         return null != result;
 	}
 
     public void testConfigurationRoundtrip() throws Exception {
-        SSHLauncher launcher = new SSHLauncher("localhost", 123, null, "pass", "xyz", new DefaultJDKInstaller(), null, null, null, 0, 0);
+        SSHLauncher launcher = new SSHLauncher("localhost", 123, null, "pass", "xyz", new DefaultJDKInstaller(), null, null, null, 0, 0, null);
         DumbSlave slave = new DumbSlave("slave", "dummy",
                 createTmpDir().getPath(), "1", Mode.NORMAL, "",
                 launcher, RetentionStrategy.NOOP, Collections.EMPTY_LIST);
