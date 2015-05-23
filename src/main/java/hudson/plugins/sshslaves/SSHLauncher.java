@@ -47,9 +47,7 @@ import com.trilead.ssh2.SFTPv3FileAttributes;
 import com.trilead.ssh2.Session;
 import com.trilead.ssh2.transport.TransportManager;
 import edu.umd.cs.findbugs.annotations.NonNull;
-import hudson.AbortException;
-import hudson.EnvVars;
-import hudson.Extension;
+import hudson.*;
 import hudson.Util;
 import hudson.model.Descriptor;
 import hudson.model.Hudson;
@@ -69,11 +67,7 @@ import hudson.tools.JDKInstaller.CPU;
 import hudson.tools.JDKInstaller.Platform;
 import hudson.tools.ToolLocationNodeProperty;
 import hudson.tools.ToolLocationNodeProperty.ToolLocation;
-import hudson.util.DescribableList;
-import hudson.util.IOException2;
-import hudson.util.ListBoxModel;
-import hudson.util.NullStream;
-import hudson.util.Secret;
+import hudson.util.*;
 import jenkins.model.Jenkins;
 import org.acegisecurity.context.SecurityContext;
 import org.acegisecurity.context.SecurityContextHolder;
@@ -104,19 +98,9 @@ import java.net.URL;
 import java.text.MessageFormat;
 import java.text.NumberFormat;
 import java.text.ParseException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Date;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Set;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
@@ -248,6 +232,16 @@ public class SSHLauncher extends ComputerLauncher {
     public final Integer retryWaitTime;
 
     /**
+     *  Field beforeConnectCmd.
+     */
+    public final String beforeConnectCmd;
+
+    /**
+     *  Field beforeDisconnectCmd.
+     */
+    public final String beforeDisconnectCmd;
+
+    /**
      * Constructor SSHLauncher creates a new SSHLauncher instance.
      *
      * @param host       The host to connect to.
@@ -260,16 +254,18 @@ public class SSHLauncher extends ComputerLauncher {
      * @param launchTimeoutSeconds Launch timeout in seconds
      * @param maxNumRetries The number of times to retry connection if the SSH connection is refused during initial connect
      * @param retryWaitTime The number of seconds to wait between retries
+     * @param beforeConnectCmd Command to run before actual ssh connection. Can be used to power on slave using wake on lan.
+     * @param beforeDisconnectCmd Command to run before closing of the ssh connection. Can be used to power off slave.
      */
     @DataBoundConstructor
     public SSHLauncher(String host, int port, String credentialsId,
              String jvmOptions, String javaPath, String prefixStartSlaveCmd, String suffixStartSlaveCmd,
-             Integer launchTimeoutSeconds, Integer maxNumRetries, Integer retryWaitTime) {
+             Integer launchTimeoutSeconds, Integer maxNumRetries, Integer retryWaitTime, String beforeConnectCmd, String beforeDisconnectCmd) {
         this(host, port, lookupSystemCredentials(credentialsId), jvmOptions, javaPath, null, prefixStartSlaveCmd,
-             suffixStartSlaveCmd, launchTimeoutSeconds, maxNumRetries, retryWaitTime);
+             suffixStartSlaveCmd, launchTimeoutSeconds, maxNumRetries, retryWaitTime, beforeConnectCmd, beforeDisconnectCmd);
     }
 
-    /** @deprecated Use {@link #SSHLauncher(String, int, String, String, String, String, String, Integer, Integer, Integer)} instead. */
+    /** @deprecated Use {@link #SSHLauncher(String, int, String, String, String, String, String, Integer, Integer, Integer, String)} instead. */
     @Deprecated
     public SSHLauncher(String host, int port, String credentialsId,
                        String jvmOptions, String javaPath, String prefixStartSlaveCmd, String suffixStartSlaveCmd,
@@ -318,11 +314,13 @@ public class SSHLauncher extends ComputerLauncher {
      * @param launchTimeoutSeconds Launch timeout in seconds
      * @param maxNumRetries The number of times to retry connection if the SSH connection is refused during initial connect
      * @param retryWaitTime The number of seconds to wait between retries
+     * @param beforeConnectCmd Command to run before actual ssh connection. Can be used to power on slave using wake on lan.
+     * @param beforeDisconnectCmd Command to run before closing of the ssh connection. Can be used to power off slave.
      */
     public SSHLauncher(String host, int port, StandardUsernameCredentials credentials,
                        String jvmOptions, String javaPath, String prefixStartSlaveCmd, String suffixStartSlaveCmd,
-                       Integer launchTimeoutSeconds, Integer maxNumRetries, Integer retryWaitTime) {
-        this(host, port, credentials, jvmOptions, javaPath, null, prefixStartSlaveCmd, suffixStartSlaveCmd, launchTimeoutSeconds, maxNumRetries, retryWaitTime);
+                       Integer launchTimeoutSeconds, Integer maxNumRetries, Integer retryWaitTime, String beforeConnectCmd, String beforeDisconnectCmd) {
+        this(host, port, credentials, jvmOptions, javaPath, null, prefixStartSlaveCmd, suffixStartSlaveCmd, launchTimeoutSeconds, maxNumRetries, retryWaitTime, beforeConnectCmd, beforeDisconnectCmd);
     }
 
     /** @deprecated Use {@link #SSHLauncher(String, int, StandardUsernameCredentials, String, String, String, String, Integer, Integer, Integer)} instead. */
@@ -330,21 +328,21 @@ public class SSHLauncher extends ComputerLauncher {
     public SSHLauncher(String host, int port, StandardUsernameCredentials credentials,
              String jvmOptions, String javaPath, String prefixStartSlaveCmd, String suffixStartSlaveCmd,
              Integer launchTimeoutSeconds) {
-        this(host, port, credentials, jvmOptions, javaPath, null, prefixStartSlaveCmd, suffixStartSlaveCmd, launchTimeoutSeconds, null, null);
+        this(host, port, credentials, jvmOptions, javaPath, null, prefixStartSlaveCmd, suffixStartSlaveCmd, launchTimeoutSeconds, null, null, null, null);
     }
 
     /** @deprecated Use {@link #SSHLauncher(String, int, StandardUsernameCredentials, String, String, String, String, Integer, Integer, Integer)} instead. */
     @Deprecated
     public SSHLauncher(String host, int port, StandardUsernameCredentials credentials,
              String jvmOptions, String javaPath, String prefixStartSlaveCmd, String suffixStartSlaveCmd) {
-        this(host, port, credentials, jvmOptions, javaPath, prefixStartSlaveCmd, suffixStartSlaveCmd, null, null, null);
+        this(host, port, credentials, jvmOptions, javaPath, prefixStartSlaveCmd, suffixStartSlaveCmd, null, null, null, null, null);
     }
 
     /** @deprecated Use {@link #SSHLauncher(String, int, StandardUsernameCredentials, String, String, String, String)} instead. */
     @Deprecated
     public SSHLauncher(String host, int port, SSHUser credentials,
              String jvmOptions, String javaPath, String prefixStartSlaveCmd, String suffixStartSlaveCmd) {
-        this(host, port, (StandardUsernameCredentials) credentials, jvmOptions, javaPath, prefixStartSlaveCmd, suffixStartSlaveCmd, null, null, null);
+        this(host, port, (StandardUsernameCredentials) credentials, jvmOptions, javaPath, prefixStartSlaveCmd, suffixStartSlaveCmd, null, null, null, null, null);
     }
 
     /**
@@ -403,6 +401,8 @@ public class SSHLauncher extends ComputerLauncher {
         this.launchTimeoutSeconds = null;
         this.maxNumRetries = null;
         this.retryWaitTime = null;
+        this.beforeConnectCmd = null;
+        this.beforeDisconnectCmd = null;
     }
 
     /**
@@ -421,7 +421,7 @@ public class SSHLauncher extends ComputerLauncher {
     @Deprecated
     public SSHLauncher(String host, int port, StandardUsernameCredentials credentials, String jvmOptions,
                                     String javaPath, JDKInstaller jdkInstaller, String prefixStartSlaveCmd, String suffixStartSlaveCmd) {
-        this(host, port, credentials, jvmOptions, javaPath, jdkInstaller, prefixStartSlaveCmd, suffixStartSlaveCmd, null, null, null);
+        this(host, port, credentials, jvmOptions, javaPath, jdkInstaller, prefixStartSlaveCmd, suffixStartSlaveCmd, null, null, null, null, null);
     }
 
     /**
@@ -438,10 +438,12 @@ public class SSHLauncher extends ComputerLauncher {
      * @param launchTimeoutSeconds Launch timeout in seconds
      * @param maxNumRetries The number of times to retry connection if the SSH connection is refused during initial connect
      * @param retryWaitTime The number of seconds to wait between retries
+     * @param beforeConnectCmd Command to run before actual ssh connection. Can be used to power on slave using wake on lan.
+     * @param beforeDisconnectCmd Command to run before closing of the ssh connection. Can be used to power off slave.
      */
     public SSHLauncher(String host, int port, StandardUsernameCredentials credentials, String jvmOptions,
                                     String javaPath, JDKInstaller jdkInstaller, String prefixStartSlaveCmd,
-                                    String suffixStartSlaveCmd, Integer launchTimeoutSeconds, Integer maxNumRetries, Integer retryWaitTime) {
+                                    String suffixStartSlaveCmd, Integer launchTimeoutSeconds, Integer maxNumRetries, Integer retryWaitTime, String beforeConnectCmd, String beforeDisconnectCmd) {
         this.host = host;
         this.jvmOptions = fixEmpty(jvmOptions);
         this.port = port == 0 ? 22 : port;
@@ -459,6 +461,8 @@ public class SSHLauncher extends ComputerLauncher {
         this.launchTimeoutSeconds = launchTimeoutSeconds == null || launchTimeoutSeconds <= 0 ? null : launchTimeoutSeconds;
         this.maxNumRetries = maxNumRetries == null || maxNumRetries <= 0 ? 0 : maxNumRetries;
         this.retryWaitTime = retryWaitTime == null || retryWaitTime <= 0 ? 0 : retryWaitTime;
+        this.beforeConnectCmd = fixEmpty(beforeConnectCmd);
+        this.beforeDisconnectCmd = fixEmpty(beforeDisconnectCmd);
     }
 
     /** @deprecated Use {@link #SSHLauncher(String, int, StandardUsernameCredentials, String, String, JDKInstaller, String, String)} instead. */
@@ -693,12 +697,13 @@ public class SSHLauncher extends ComputerLauncher {
         connection = new Connection(host, port);
         ExecutorService executorService = Executors.newSingleThreadExecutor();
         Set<Callable<Boolean>> callables = new HashSet<Callable<Boolean>>();
+        beforeConnect(computer, listener);
         callables.add(new Callable<Boolean>() {
             public Boolean call() throws InterruptedException {
                 Boolean rval = Boolean.FALSE;
                 try {
 
-                    openConnection(listener);
+                    openConnection(computer, listener);
 
                     verifyNoHeaderJunk(listener);
                     reportEnvironment(listener);
@@ -714,10 +719,13 @@ public class SSHLauncher extends ComputerLauncher {
                     rval = Boolean.TRUE;
                 } catch (RuntimeException e) {
                     e.printStackTrace(listener.error(Messages.SSHLauncher_UnexpectedError()));
+                    cleanupConnection(listener);
                 } catch (Error e) {
                     e.printStackTrace(listener.error(Messages.SSHLauncher_UnexpectedError()));
+                    cleanupConnection(listener);
                 } catch (IOException e) {
                     e.printStackTrace(listener.getLogger());
+                    cleanupConnection(listener);
                 } finally {
                     return rval;
                 }
@@ -762,6 +770,7 @@ public class SSHLauncher extends ComputerLauncher {
     private void cleanupConnection(TaskListener listener) {
         // we might be called multiple times from multiple finally/catch block, 
         if (connection!=null) {
+            afterDisconnectRoutine(listener);
             connection.close();
             connection = null;
             listener.getLogger().println(Messages.SSHLauncher_ConnectionClosed(getTimestamp()));
@@ -1135,7 +1144,7 @@ public class SSHLauncher extends ComputerLauncher {
 		return null;
 	}
 
-    protected void openConnection(TaskListener listener) throws IOException, InterruptedException {
+    protected void openConnection(SlaveComputer slaveComputer, TaskListener listener) throws IOException, InterruptedException {
         listener.getLogger().println(Messages.SSHLauncher_OpeningSSHConnection(getTimestamp(), host + ":" + port));
         connection.setTCPNoDelay(true);
 
@@ -1178,6 +1187,69 @@ public class SSHLauncher extends ComputerLauncher {
             throw new AbortException(Messages.SSHLauncher_AuthenticationFailedException());
         }
     }
+
+    protected synchronized void beforeConnect(SlaveComputer slaveComputer, TaskListener listener) {
+        if (beforeConnectCmd == null || connection.isAuthenticationComplete())
+            return;
+        PrintStream logger = listener.getLogger();
+        logger.println(Messages.SSHLauncher_BeforeConnectStart(getTimestamp(), beforeConnectCmd));
+        logger.flush();
+        try {
+            ArgumentListBuilder builder = new ArgumentListBuilder();
+            builder.addTokenized(beforeConnectCmd);
+            Process p = Runtime.getRuntime().exec(builder.toCommandArray());
+            boolean exited = false;
+
+            BufferedReader reader =
+                    new BufferedReader(new InputStreamReader(p.getInputStream()));
+
+            String line = "";
+            while ((line = reader.readLine())!= null) {
+                logger.println(Messages.SSHLauncher_BeforeConnectProgress(getTimestamp(), line));
+                logger.flush();
+            }
+
+            p.waitFor();
+            p.exitValue();
+        } catch (Exception e) {
+            logger.println(Messages.SSHLauncher_BeforeConnectError(getTimestamp(), e.toString(), e.getMessage()));
+        }
+        logger.println(Messages.SSHLauncher_BeforeConnectFinished(getTimestamp()));
+        logger.flush();
+    }
+
+    /**
+     * Run custom entered script to handle node disconnection
+     */
+    private void afterDisconnectRoutine(TaskListener listener) {
+        if (beforeDisconnectCmd != null) {
+            PrintStream logger = listener.getLogger();
+            logger.println(Messages.SSHLauncher_BeforeDisconnectStart(getTimestamp(), beforeDisconnectCmd));
+            logger.flush();
+            try {
+                ArgumentListBuilder builder = new ArgumentListBuilder();
+                builder.addTokenized(beforeDisconnectCmd);
+                Process p = Runtime.getRuntime().exec(builder.toCommandArray());
+                boolean exited = false;
+
+                BufferedReader reader =
+                        new BufferedReader(new InputStreamReader(p.getInputStream()));
+
+                String line = "";
+                while ((line = reader.readLine()) != null) {
+                    logger.println(Messages.SSHLauncher_BeforeDisconnectProgress(getTimestamp(), line));
+                    logger.flush();
+                }
+                p.waitFor();
+                p.exitValue();
+            } catch (Exception e) {
+                logger.println(Messages.SSHLauncher_BeforeDisconnectError(getTimestamp(), e.toString(), e.getMessage()));
+            }
+            logger.println(Messages.SSHLauncher_BeforeDisconnectFinished(getTimestamp()));
+            logger.flush();
+        }
+    }
+
 
     /**
      * {@inheritDoc}

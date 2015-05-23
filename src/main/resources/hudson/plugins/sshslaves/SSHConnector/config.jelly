@@ -37,5 +37,13 @@
           <f:textbox name="retryWaitTime" />
       </f:entry>
 
+      <f:entry title="${%Command to run before connection attempt}" field="beforeConnectCmd">
+          <f:textarea name="beforeConnectCmd" />
+      </f:entry>
+
+      <f:entry title="${%Command to run before disconnection}" field="beforeDisconnectCmd">
+          <f:textarea name="beforeDisconnectCmd" />
+      </f:entry>
+
   </f:advanced>
 </j:jelly>
